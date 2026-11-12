@@ -20,7 +20,7 @@ CACHE_SECONDS = 60  # data is re-pulled at most once a minute; "Refresh" forces 
 # Diverging pair: blue = up, red = down, gray = even
 POS, NEG, NEUTRAL = "#2a78d6", "#e34948", "#9a9993"
 
-st.set_page_config(page_title="Winnings Dashboard", page_icon="🎲", layout="wide")
+st.set_page_config(page_title="Nayib's Winnings Dashboard", page_icon="🎲", layout="wide")
 
 
 # ── Data ─────────────────────────────────────────────────────────────────────
