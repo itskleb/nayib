@@ -38,19 +38,43 @@ def parse_money(val) -> float | None:
     return -n if neg else n
 
 
+COLUMNS = ["Date", "Opponent", "Win", "Amount", "AJD Amount"]  # expected order: A–E
+
+
+def pick(raw: pd.DataFrame, name: str) -> pd.Series:
+    """Find a column by header (ignoring case/spaces); fall back to its position A–E
+    so a renamed header doesn't break the app."""
+    key = name.replace(" ", "").lower()
+    for col in raw.columns:
+        if str(col).replace(" ", "").lower() == key:
+            return raw[col]
+    pos = COLUMNS.index(name)
+    if pos < raw.shape[1]:
+        return raw.iloc[:, pos]
+    return pd.Series([None] * len(raw), index=raw.index, dtype="object")
+
+
+def parse_dates(s: pd.Series) -> pd.Series:
+    s = s.fillna("").astype(str).str.strip()
+    out = pd.to_datetime(s, format="%m/%d/%Y", errors="coerce")
+    rest = out.isna() & (s != "")
+    if rest.any():  # any other date style someone types in
+        out[rest] = pd.to_datetime(s[rest], errors="coerce", format="mixed")
+    return out
+
+
 def clean(raw: pd.DataFrame) -> pd.DataFrame:
     raw = raw.loc[:, ~raw.columns.astype(str).str.startswith("Unnamed")]
-    raw.columns = [str(c).strip() for c in raw.columns]
 
-    df = pd.DataFrame()
+    df = pd.DataFrame(index=raw.index)
     df["Bet #"] = range(1, len(raw) + 1)  # sheet order (the sheet is roughly chronological)
-    df["Date"] = pd.to_datetime(raw.get("Date"), errors="coerce")
+    df["Date"] = parse_dates(pick(raw, "Date"))
     df["Opponent"] = (
-        raw.get("Opponent").fillna("").astype(str).str.strip().str.title()
+        pick(raw, "Opponent").fillna("").astype(str).str.strip().str.title()
     )  # "david" → "David"
-    df["Result"] = raw.get("Win").fillna("").astype(str).str.strip().str.title()
-    df["Stake"] = raw.get("Amount").map(parse_money)
-    signed = raw.get("AJD Amount").map(parse_money)
+    df["Result"] = pick(raw, "Win").fillna("").astype(str).str.strip().str.title()
+    df["Stake"] = pick(raw, "Amount").map(parse_money).astype(float)
+    signed = pick(raw, "AJD Amount").map(parse_money).astype(float)
 
     # If the signed column is blank, derive it from Result + Amount
     derived = df["Stake"].where(df["Result"] == "Win", -df["Stake"]).where(
@@ -119,28 +143,35 @@ with head_r:
 # ── Filters (one row) ────────────────────────────────────────────────────────
 opponents = sorted(df["Opponent"].unique())
 dated = df["Date"].dropna()
-min_d, max_d = dated.min().date(), dated.max().date()
+has_dates = not dated.empty
+n_undated = int(df["Date"].isna().sum())
 
 f1, f2, f3 = st.columns([3, 2, 1.4])
 picked = f1.multiselect("Opponent", opponents, placeholder="All opponents")
-date_range = f2.date_input(
-    "Date range", value=(min_d, max_d), min_value=min_d, max_value=max_d, format="MM/DD/YYYY"
-)
-n_undated = int(df["Date"].isna().sum())
-with f3:
-    st.write("")
-    include_undated = st.checkbox(
-        f"Include undated ({n_undated})",
-        value=True,
-        help="Many rows in the sheet have no date. They're included unless you uncheck this. "
-        "Undated rows can't be placed in a date range, so they are kept or dropped as a group.",
+date_range = None
+include_undated = True
+if has_dates:
+    min_d, max_d = dated.min().date(), dated.max().date()
+    date_range = f2.date_input(
+        "Date range", value=(min_d, max_d), min_value=min_d, max_value=max_d,
+        format="MM/DD/YYYY", key=f"dates_{min_d}_{max_d}",  # resets cleanly when new dates arrive
     )
+    with f3:
+        st.write("")
+        include_undated = st.checkbox(
+            f"Include undated ({n_undated})",
+            value=True,
+            help="Many rows in the sheet have no date. They're included unless you uncheck this. "
+            "Undated rows can't be placed in a date range, so they are kept or dropped as a group.",
+        )
+else:
+    f2.caption("No readable dates found in column A, so the date filter is hidden.")
 
 view = df.copy()
 if picked:
     view = view[view["Opponent"].isin(picked)]
 
-if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+if has_dates and isinstance(date_range, (list, tuple)) and len(date_range) == 2:
     start, end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
     full_range = date_range[0] == min_d and date_range[1] == max_d
     in_range = view["Date"].between(start, end)
