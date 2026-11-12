@@ -108,7 +108,7 @@ except Exception as e:  # noqa: BLE001
 
 # ── Header ───────────────────────────────────────────────────────────────────
 head_l, head_r = st.columns([4, 1])
-head_l.title("🎲 Winnings Dashboard")
+head_l.title("🎱 Nayib's Winnings Dashboard 💰")
 with head_r:
     st.write("")
     if st.button("↻ Refresh data", width="stretch"):
